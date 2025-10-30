@@ -120,6 +120,7 @@ Resources:
                   - lightsail:GetContainerServices
                   - lightsail:GetContainerImages
                   - lightsail:CreateContainerServiceDeployment
+                  - lightsail:CreateContainerServiceRegistryLogin
                 Resource: '*'
 
   CodePipelineRole:
