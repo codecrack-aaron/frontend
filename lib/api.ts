@@ -23,7 +23,7 @@ export interface TestResult {
 
 export async function fetchProblemContent(problemId: string): Promise<ProblemContent> {
   const res = await fetch(`${PROBLEM_CONTENT_API}/problems/${problemId}`, {
-    cache: 'force-cache', // Cache problem content
+    // cache: 'force-cache', // Cache problem content
   });
 
   if (!res.ok) {
