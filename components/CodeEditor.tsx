@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
+import { indentUnit } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 import { javascript } from '@codemirror/lang-javascript';
 import { cpp } from '@codemirror/lang-cpp';
@@ -196,7 +197,10 @@ export default function CodeEditor({ starterCode, onExecute, isExecuting, proble
         value={code}
         height="400px"
         theme={oneDark}
-        extensions={[LANGUAGES[selectedLanguage].extension]}
+        extensions={[
+          LANGUAGES[selectedLanguage].extension,
+          indentUnit.of('    ')
+        ]}
         onChange={(value) => setCode(value)}
         onCreateEditor={(view) => {
           editorViewRef.current = view;
