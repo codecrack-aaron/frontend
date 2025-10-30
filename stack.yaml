@@ -202,12 +202,18 @@ Resources:
             build:
               commands:
                 - echo Building Docker image...
-                - docker build -t $ECR_REPOSITORY_URI:staging .
+                - docker build -t $ECR_REPOSITORY_URI:$COMMIT_HASH .
             post_build:
               commands:
-                - echo Pushing to ECR...
+                - echo Pushing to ECR with commit hash tag...
+                - docker push $ECR_REPOSITORY_URI:$COMMIT_HASH
+                - echo Tagging as staging for lifecycle management...
+                - docker tag $ECR_REPOSITORY_URI:$COMMIT_HASH $ECR_REPOSITORY_URI:staging
                 - docker push $ECR_REPOSITORY_URI:staging
-                - printf '{"ImageURI":"%s"}' $ECR_REPOSITORY_URI:staging > imageDetail.json
+                - echo Capturing image digest...
+                - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REPOSITORY_URI:$COMMIT_HASH)
+                - printf '{"ImageDigest":"%s"}' $IMAGE_DIGEST > imageDetail.json
+                - cat imageDetail.json
           artifacts:
             files:
               - imageDetail.json
@@ -239,11 +245,14 @@ Resources:
                 - echo Installing lightsailctl plugin...
                 - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
                 - chmod +x /usr/local/bin/lightsailctl
-                - echo Logging in to ECR and pulling staging image...
+                - echo Loading image digest from build artifact...
+                - IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')
+                - echo "Deploying image: $IMAGE_DIGEST"
+                - echo Logging in to ECR and pulling image by digest...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
-                - docker pull $ECR_REPOSITORY_URI:staging
+                - docker pull $IMAGE_DIGEST
                 - echo Pushing ECR image to Lightsail...
-                - aws lightsail push-container-image --service-name $SERVICE_NAME --label staging --image $ECR_REPOSITORY_URI:staging
+                - aws lightsail push-container-image --service-name $SERVICE_NAME --label staging --image $IMAGE_DIGEST
             build:
               commands:
                 - echo Deploying to Lightsail staging...
@@ -303,13 +312,16 @@ Resources:
                 - echo Installing lightsailctl plugin...
                 - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
                 - chmod +x /usr/local/bin/lightsailctl
-                - echo Tagging staging image as production...
+                - echo Loading image digest from build artifact...
+                - IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')
+                - echo "Deploying image: $IMAGE_DIGEST"
+                - echo Logging in to ECR and tagging as production...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
-                - docker pull $ECR_REPOSITORY_URI:staging
-                - docker tag $ECR_REPOSITORY_URI:staging $ECR_REPOSITORY_URI:production
+                - docker pull $IMAGE_DIGEST
+                - docker tag $IMAGE_DIGEST $ECR_REPOSITORY_URI:production
                 - docker push $ECR_REPOSITORY_URI:production
                 - echo Pushing production image to Lightsail...
-                - aws lightsail push-container-image --service-name $SERVICE_NAME --label production --image $ECR_REPOSITORY_URI:production
+                - aws lightsail push-container-image --service-name $SERVICE_NAME --label production --image $IMAGE_DIGEST
             build:
               commands:
                 - echo Deploying to Lightsail production...
