@@ -93,10 +93,10 @@ Create staging container service:
 aws lightsail create-container-service --service-name frontend-staging --power small --scale 1
 ```
 
-Create production container service:
+Create production container service (scale=2 for zero-downtime deployments):
 
 ```cmd
-aws lightsail create-container-service --service-name frontend-production --power small --scale 1
+aws lightsail create-container-service --service-name frontend-production --power small --scale 2
 ```
 
 Wait for services to be active:
@@ -118,6 +118,14 @@ Wait for stack creation to complete:
 
 ```cmd
 aws cloudformation wait stack-create-complete --stack-name frontend
+```
+
+### Update Stack
+
+Update existing stack with template changes:
+
+```cmd
+aws cloudformation update-stack --stack-name frontend --template-body file://stack.yaml --parameters ParameterKey=GitHubConnectionArn,UsePreviousValue=true --capabilities CAPABILITY_NAMED_IAM
 ```
 
 #### 4. Trigger Initial Pipeline
