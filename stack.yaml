@@ -234,6 +234,9 @@ Resources:
           phases:
             pre_build:
               commands:
+                - echo Installing lightsailctl plugin...
+                - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
+                - chmod +x /usr/local/bin/lightsailctl
                 - echo Pushing ECR image to Lightsail...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
                 - aws lightsail push-container-image --service-name $SERVICE_NAME --label staging --image $ECR_REPOSITORY_URI:staging
@@ -293,6 +296,9 @@ Resources:
           phases:
             pre_build:
               commands:
+                - echo Installing lightsailctl plugin...
+                - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
+                - chmod +x /usr/local/bin/lightsailctl
                 - echo Tagging staging image as production...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
                 - docker pull $ECR_REPOSITORY_URI:staging
