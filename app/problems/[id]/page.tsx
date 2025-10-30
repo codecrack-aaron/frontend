@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'use';
-import { use } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { fetchProblemContent, executeCode, type ProblemContent, type TestResult } from '@/lib/api';
 import ProblemDescription from '@/components/ProblemDescription';
 import CodeEditor from '@/components/CodeEditor';
 import TestResults from '@/components/TestResults';
 
-export default function ProblemPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ProblemPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const [problem, setProblem] = useState<ProblemContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

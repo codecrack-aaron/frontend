@@ -22,18 +22,17 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ language, problem_id, code }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
+      const errorData = await response.json();
       return NextResponse.json(
-        { error: data.error || 'Execution failed' },
+        { error: errorData.message || 'Execution failed' },
         { status: response.status }
       );
     }
 
-    const results = JSON.parse(data.body);
+    const data = await response.json();
 
-    return NextResponse.json(results);
+    return NextResponse.json(data);
   } catch (error: any) {
     console.error('Execute API error:', error);
     return NextResponse.json(

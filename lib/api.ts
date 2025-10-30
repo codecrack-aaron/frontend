@@ -49,5 +49,11 @@ export async function executeCode(
     throw new Error(error.error || 'Execution failed');
   }
 
-  return res.json();
+  const data = await res.json();
+
+  if (data.status === 'compilation_error' || data.status === 'internal_error') {
+    throw new Error(data.message || 'Execution failed');
+  }
+
+  return data.test_results;
 }
