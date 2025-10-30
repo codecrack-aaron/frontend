@@ -23,7 +23,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Copy necessary files from builder
-COPY --from=builder /app/public ./public
+# Copy public directory if it exists (using shell to handle missing directory)
+RUN mkdir -p public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
