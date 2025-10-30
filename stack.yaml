@@ -246,7 +246,7 @@ Resources:
                 - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
                 - chmod +x /usr/local/bin/lightsailctl
                 - echo Loading image digest from build artifact...
-                - IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')
+                - "IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')"
                 - echo "Deploying image: $IMAGE_DIGEST"
                 - echo Logging in to ECR and pulling image by digest...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
@@ -313,7 +313,7 @@ Resources:
                 - curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
                 - chmod +x /usr/local/bin/lightsailctl
                 - echo Loading image digest from build artifact...
-                - IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')
+                - "IMAGE_DIGEST=$(cat imageDetail.json | jq -r '.ImageDigest')"
                 - echo "Deploying image: $IMAGE_DIGEST"
                 - echo Logging in to ECR and tagging as production...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
