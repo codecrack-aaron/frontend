@@ -208,7 +208,7 @@ Resources:
                 - echo Pushing to ECR with commit hash tag...
                 - docker push $ECR_REPOSITORY_URI:$COMMIT_HASH
                 - echo Tagging as staging for lifecycle management...
-                - docker tag $ECR_REPOSITORY_URI:$COMMIT_HASH $ECR_REPOSITORY_URI:staging
+                - "docker tag $ECR_REPOSITORY_URI:$COMMIT_HASH $ECR_REPOSITORY_URI:staging"
                 - docker push $ECR_REPOSITORY_URI:staging
                 - echo Capturing image digest...
                 - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REPOSITORY_URI:$COMMIT_HASH)
@@ -318,7 +318,7 @@ Resources:
                 - echo Logging in to ECR and tagging as production...
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
                 - docker pull $IMAGE_DIGEST
-                - docker tag $IMAGE_DIGEST $ECR_REPOSITORY_URI:production
+                - "docker tag $IMAGE_DIGEST $ECR_REPOSITORY_URI:production"
                 - docker push $ECR_REPOSITORY_URI:production
                 - echo Pushing production image to Lightsail...
                 - aws lightsail push-container-image --service-name $SERVICE_NAME --label production --image $IMAGE_DIGEST
