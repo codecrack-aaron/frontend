@@ -84,6 +84,7 @@ export default function ProblemPage({ params }: { params: { id: string } }) {
               starterCode={problem.starterCode}
               onExecute={handleExecute}
               isExecuting={isExecuting}
+              problemId={id}
             />
 
             <TestResults results={testResults} error={executionError || undefined} />

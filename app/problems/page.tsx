@@ -21,10 +21,7 @@ export default function ProblemsPage() {
               className="block border rounded-lg p-6 hover:border-blue-600 hover:shadow-lg transition"
             >
               <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-semibold">{problem.title}</h2>
-                  <p className="text-gray-600">Problem ID: {problem.id}</p>
-                </div>
+                <h2 className="text-xl font-semibold">{problem.title}</h2>
                 <span
                   className={`px-4 py-2 rounded-full text-sm font-medium ${
                     problem.difficulty === 'Easy'
