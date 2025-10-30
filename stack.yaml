@@ -1,0 +1,415 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Frontend - Lightsail Container Service with CI/CD'
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the CodeStar Connection for GitHub
+
+  GitHubRepoOwner:
+    Type: String
+    Default: codecrack-aaron
+
+  GitHubRepoName:
+    Type: String
+    Default: frontend
+
+  GitHubBranch:
+    Type: String
+    Default: master
+
+Resources:
+  # ============================================================================
+  # S3 - Artifact storage
+  # ============================================================================
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'frontend-artifacts-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ============================================================================
+  # ECR - Docker image repository
+  # ============================================================================
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: frontend
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Delete untagged images after 1 day",
+              "selection": {
+                "tagStatus": "untagged",
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 1
+              },
+              "action": {"type": "expire"}
+            }]
+          }
+
+  # ============================================================================
+  # IAM Roles
+  # ============================================================================
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: frontend-codebuild-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/frontend*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !GetAtt ECRRepository.Arn
+              - Effect: Allow
+                Action:
+                  - lightsail:GetContainerServices
+                  - lightsail:GetContainerImages
+                  - lightsail:CreateContainerServiceDeployment
+                Resource: '*'
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: frontend-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt BuildProject.Arn
+                  - !GetAtt DeployStagingProject.Arn
+                  - !GetAtt DeployProductionProject.Arn
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource: !Ref GitHubConnectionArn
+
+  # ============================================================================
+  # CodePipeline - CI/CD
+  # ============================================================================
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: frontend-build
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_DOCKER_LAYER_CACHE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: ECR_REPOSITORY_URI
+            Value: !GetAtt ECRRepository.RepositoryUri
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+            build:
+              commands:
+                - echo Building Docker image...
+                - docker build -t $ECR_REPOSITORY_URI:staging .
+            post_build:
+              commands:
+                - echo Pushing to ECR...
+                - docker push $ECR_REPOSITORY_URI:staging
+                - printf '{"ImageURI":"%s"}' $ECR_REPOSITORY_URI:staging > imageDetail.json
+          artifacts:
+            files:
+              - imageDetail.json
+
+  DeployStagingProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: frontend-deploy-staging
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: SERVICE_NAME
+            Value: frontend-staging
+          - Name: ECR_REPOSITORY_URI
+            Value: !GetAtt ECRRepository.RepositoryUri
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Pushing ECR image to Lightsail...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+                - aws lightsail push-container-image --service-name $SERVICE_NAME --label staging --image $ECR_REPOSITORY_URI:staging
+            build:
+              commands:
+                - echo Deploying to Lightsail staging...
+                - |
+                  cat > deployment.json <<EOF
+                  {
+                    "containers": {
+                      "app": {
+                        "image": ":$SERVICE_NAME.staging.latest",
+                        "ports": {
+                          "3000": "HTTP"
+                        },
+                        "environment": {
+                          "NODE_ENV": "production"
+                        }
+                      }
+                    },
+                    "publicEndpoint": {
+                      "containerName": "app",
+                      "containerPort": 3000,
+                      "healthCheck": {
+                        "path": "/",
+                        "intervalSeconds": 30
+                      }
+                    }
+                  }
+                  EOF
+                - aws lightsail create-container-service-deployment --service-name $SERVICE_NAME --cli-input-json file://deployment.json
+                - echo Waiting for deployment to complete...
+                - sleep 60
+                - echo Staging deployment complete
+
+  DeployProductionProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: frontend-deploy-production
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: SERVICE_NAME
+            Value: frontend-production
+          - Name: ECR_REPOSITORY_URI
+            Value: !GetAtt ECRRepository.RepositoryUri
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Tagging staging image as production...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+                - docker pull $ECR_REPOSITORY_URI:staging
+                - docker tag $ECR_REPOSITORY_URI:staging $ECR_REPOSITORY_URI:production
+                - docker push $ECR_REPOSITORY_URI:production
+                - echo Pushing production image to Lightsail...
+                - aws lightsail push-container-image --service-name $SERVICE_NAME --label production --image $ECR_REPOSITORY_URI:production
+            build:
+              commands:
+                - echo Deploying to Lightsail production...
+                - |
+                  cat > deployment.json <<EOF
+                  {
+                    "containers": {
+                      "app": {
+                        "image": ":$SERVICE_NAME.production.latest",
+                        "ports": {
+                          "3000": "HTTP"
+                        },
+                        "environment": {
+                          "NODE_ENV": "production"
+                        }
+                      }
+                    },
+                    "publicEndpoint": {
+                      "containerName": "app",
+                      "containerPort": 3000,
+                      "healthCheck": {
+                        "path": "/",
+                        "intervalSeconds": 30
+                      }
+                    }
+                  }
+                  EOF
+                - aws lightsail create-container-service-deployment --service-name $SERVICE_NAME --cli-input-json file://deployment.json
+                - echo Waiting for deployment to complete...
+                - sleep 60
+                - echo Production deployment complete
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: frontend-pipeline
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceCode
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Sub '${GitHubRepoOwner}/${GitHubRepoName}'
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceOutput
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+        - Name: DeployStaging
+          Actions:
+            - Name: DeployStaging
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref DeployStagingProject
+              InputArtifacts:
+                - Name: BuildOutput
+        - Name: Approval
+          Actions:
+            - Name: ManualApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: 'Please review staging environment and approve deployment to production'
+        - Name: DeployProduction
+          Actions:
+            - Name: DeployProduction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref DeployProductionProject
+              InputArtifacts:
+                - Name: BuildOutput
+
+Outputs:
+  PipelineUrl:
+    Description: CodePipeline console URL
+    Value: !Sub 'https://console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view?region=${AWS::Region}'
+
+  ECRRepositoryUri:
+    Description: ECR repository URI
+    Value: !GetAtt ECRRepository.RepositoryUri

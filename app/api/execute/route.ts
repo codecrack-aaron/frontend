@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Code Execution Lambda API - internal URL (not publicly accessible via custom domain yet)
-// Eventually this will be wrapped in a backend API with rate limiting and auth
-const CODE_EXECUTION_API = process.env.CODE_EXECUTION_API || 'https://your-code-execution-api.execute-api.us-east-1.amazonaws.com';
+const CODE_EXECUTION_API = 'https://sa2xj6mvwdd5eduvf64hpqha7m0cbcgb.lambda-url.us-east-1.on.aws/';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +14,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Proxy request to Code Execution Lambda
     const response = await fetch(CODE_EXECUTION_API, {
       method: 'POST',
       headers: {
@@ -34,8 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse the response body if it's a string
-    const results = typeof data.body === 'string' ? JSON.parse(data.body) : data.body;
+    const results = JSON.parse(data.body);
 
     return NextResponse.json(results);
   } catch (error: any) {
